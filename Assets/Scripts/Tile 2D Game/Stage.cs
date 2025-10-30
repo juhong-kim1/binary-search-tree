@@ -1,6 +1,7 @@
 ﻿using UnityEngine;
-using System.Threading.Tasks;
+using Cysharp.Threading.Tasks;
 using System.Collections;
+using System.Threading;
 
 public class Stage : MonoBehaviour
 {
@@ -46,13 +47,10 @@ public class Stage : MonoBehaviour
 
     GraphSearch search = new GraphSearch();
 
-    private bool moveStart = false;
-
-    private float moveSpeed = 5f;
+    private float moveSpeed = 20f;
 
     private bool isMoving = false;
-
-    int currentTileIndex = 0;
+    private CancellationTokenSource movementCts;
 
     public int ScreenPosToTileId(Vector3 screenPos)
     {
@@ -233,32 +231,6 @@ public class Stage : MonoBehaviour
 
     private void Update()
     {
-        if (search != null && moveStart == true && isMoving == false)
-        {
-            if (!search.AStar(map.startTile, map.tiles[ScreenPosToTileId(Input.mousePosition)]))
-                return;
-
-            float t = Time.deltaTime * moveSpeed;
-
-            var currentPosition = player.transform.position;
-
-            var targetPosition = GetTilePos(search.tiles[1].id);
-
-            //player.transform.position = Vector2.Lerp(currentPosition, targetPosition, t);
-
-            if (currentPosition != targetPosition)
-            {
-                player.transform.position = Vector2.Lerp(currentPosition, targetPosition, t);
-            }
-
-
-
-            //player.transform.position = GetTilePos(ScreenPosToTileId(Input.mousePosition));
-
-            isMoving = true;
-        }
-
-
         if (Input.GetKeyDown(KeyCode.Alpha1))
         {
             Debug.Log(ScreenPosToTileId(Input.mousePosition));
@@ -266,16 +238,78 @@ public class Stage : MonoBehaviour
 
         if (Input.GetKeyDown(KeyCode.Space))
         {
+            CancelMovement();
             ResetStage();
         }
 
         if (Input.GetMouseButtonDown(0))
         {
-            if (map == null)
+            if (map == null || isMoving)
                 return;
 
+            var targetTileId = ScreenPosToTileId(Input.mousePosition);
+            var targetTile = map.tiles[targetTileId];
+
             search.Init(map);
-            moveStart = true;
+
+            if (search.AStar(map.startTile, targetTile))
+            {
+                CancelMovement();
+
+                movementCts = new CancellationTokenSource();
+
+                MoveAlongPathAsync(movementCts.Token).Forget();
+            }
         }
+    }
+
+    private async UniTaskVoid MoveAlongPathAsync(CancellationToken cancellationToken)
+    {
+        isMoving = true;
+
+        try
+        {
+            for (int i = 1; i < search.tiles.Count; i++)
+            {
+                var targetTile = search.tiles[i];
+                var targetPosition = GetTilePos(targetTile.id);
+
+                while (Vector3.Distance(player.transform.position, targetPosition) > 0.01f)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    player.transform.position = Vector3.MoveTowards(player.transform.position, targetPosition, moveSpeed * Time.deltaTime);
+
+                    await UniTask.Yield(PlayerLoopTiming.Update, cancellationToken);
+                }
+
+                player.transform.position = targetPosition;
+
+                OnTileVisited(targetTile);
+
+                map.startTile = targetTile;
+            }
+        }
+        catch (System.OperationCanceledException)
+        {
+            Debug.Log("실패");
+        }
+
+        isMoving = false;
+    }
+
+    private void CancelMovement()
+    {
+        if (movementCts != null)
+        {
+            movementCts.Cancel();
+            movementCts.Dispose();
+            movementCts = null;
+        }
+    }
+
+    private void OnDestroy()
+    {
+        CancelMovement();
     }
 }
