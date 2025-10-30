@@ -180,6 +180,7 @@ public class GraphSearch
         while (pQueue.Count > 0)
         { 
             var currentNode = pQueue.Dequeue(); //큐에서 현재까지의 거리가 가장 짧은 노드 꺼냄
+            Debug.Log(currentNode.id);
             if (visited.Contains(currentNode)) continue; //방문한 노드 제외
 
             if (currentNode == goal) //현재노드가 목표면 탐색 성공하고 루프종료
