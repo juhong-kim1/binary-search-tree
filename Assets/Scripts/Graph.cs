@@ -58,5 +58,13 @@ public class Graph
         }
     }
 
+    public void ReSetNodePrevious()
+    {
+        foreach (var node in nodes)
+        {
+            node.previous = null;
+        }
+
+    }
 
 }
